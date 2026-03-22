@@ -1,53 +1,41 @@
 const express = require('express');
-const mysql   = require('mysql2');
-const app     = express();
+const { Pool } = require('pg');
+const app = express();
 
-app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// DATABASE CONNECTION
-const db = mysql.createConnection({
-    host     : 'localhost',
-    user     : 'root',
-    password : '',
-    database : 'noticeboard_db'
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
 });
 
-db.connect((err) => {
-    if (err) {
-        console.log('Database error:', err);
-    } else {
-        console.log('Database connected!');
-    }
-});
-
-// CREATE TABLE IF NOT EXISTS
-db.query(`
+// CREATE TABLE
+pool.query(`
     CREATE TABLE IF NOT EXISTS contact_us (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
         name VARCHAR(100),
         email VARCHAR(100),
         message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT NOW()
     )
-`, (err) => {
-    if (err) console.log('Table error:', err);
-    else console.log('Table ready!');
-});
+`).then(() => console.log('Table ready!'))
+  .catch(err => console.log('Table error:', err));
 
-// HANDLE FORM SUBMISSION
-app.post('/contact', (req, res) => {
+// HANDLE FORM
+app.post('/contact', async (req, res) => {
     const { name, email, message } = req.body;
-    const sql = 'INSERT INTO contact_us (name, email, message) VALUES (?, ?, ?)';
-    db.query(sql, [name, email, message], (err) => {
-        if (err) {
-            console.log('Insert error:', err);
-            res.status(500).json({ success: false });
-        } else {
-            res.json({ success: true });
-        }
-    });
+    try {
+        await pool.query(
+            'INSERT INTO contact_us (name, email, message) VALUES ($1, $2, $3)',
+            [name, email, message]
+        );
+        res.json({ success: true });
+    } catch(err) {
+        console.log(err);
+        res.status(500).json({ success: false });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
